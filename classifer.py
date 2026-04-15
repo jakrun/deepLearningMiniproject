@@ -36,7 +36,6 @@ with torch.no_grad():
         all_preds.append(preds.cpu())
         all_targets.append(labels.cpu())
 
-
 def get_data_distribution(directory):
     emotion_dist = []
     base = f"1/{directory}"
@@ -52,29 +51,57 @@ def get_data_distribution(directory):
     return emotion_dist
 
 def confusion_matrix(preds, targets, num_classes):
-    class_dist = get_data_distribution('test')
-    print(class_dist)
-    # preds: tensor of shape (N,) with predicted class indices
-    # targets: tensor of shape (N,) with true class indices
-    preds = preds.cpu().numpy().ravel()
-    targets = targets.cpu().numpy().ravel()
     cm = np.zeros((num_classes, num_classes), dtype=np.int64)
     for t, p in zip(targets, preds):
-        cm[t, p] += (1)
-    cm = cm / np.array([100, 10, 50, ])
+        cm[t, p] += 1
+    # cm = cm / np.array([100, 10, 50, ])
     return cm
 
-
 num_classes = 7
-all_preds = torch.cat(all_preds)
-all_targets = torch.cat(all_targets)
-cm = confusion_matrix(all_preds, all_targets, num_classes=num_classes)
+all_preds = torch.cat(all_preds).cpu().numpy().ravel()
+all_targets = torch.cat(all_targets).cpu().numpy().ravel()
+train_dist = get_data_distribution('train')
+test_dist = get_data_distribution('test')
+print(f'train distribution: {train_dist}')
+print(f'test distribution: {test_dist}')
 
-plt.imshow(cm, interpolation='nearest', cmap='Blues')
-plt.colorbar()
-plt.xlabel('Predicted')
-plt.ylabel('True')
-plt.title('Confusion Matrix')
-plt.xticks(range(num_classes))
-plt.yticks(range(num_classes))
-plt.show()
+# choose which model quality analysis test to check
+match 2:
+    # confusion matrix
+    case 1:
+        cm = confusion_matrix(all_preds, all_targets, num_classes=num_classes)
+
+        plt.imshow(cm, interpolation='nearest', cmap='Blues')
+        plt.colorbar()
+        plt.xlabel('Predicted')
+        plt.ylabel('True')
+        plt.title('Confusion Matrix')
+        plt.xticks(range(num_classes))
+        plt.yticks(range(num_classes))
+        plt.show()
+    # total accuracy + precision/recall for each class
+    case 2:
+        accuracy = 0
+        total_samples = 0
+        # TP, FP, FN
+        class_accuracy = [[0, 0, 0], [0, 0, 0], [0, 0, 0], [0, 0, 0], [0, 0, 0], [0, 0, 0], [0, 0, 0]]
+        for t, p in zip(all_targets, all_preds):
+            if t == p:
+                accuracy += 1
+                class_accuracy[t][0] += 1
+            else:
+                class_accuracy[p][1] += 1
+                class_accuracy[t][2] += 1
+            total_samples += 1
+        print(f'total accuracy: {(accuracy/total_samples):.2f}')
+        print('clas | prec | reca')
+        print('-----+------+-----')
+        for c in range(num_classes):
+            try: precision = class_accuracy[c][0]/(class_accuracy[c][0]+class_accuracy[c][1])
+            except: precision = 0
+            
+            try: recall = class_accuracy[c][0]/(class_accuracy[c][0]+class_accuracy[c][2])
+            except: recall = 0
+            
+            print(f'{c:>4} | {precision:.2f} | {recall:.2f}')
+        
