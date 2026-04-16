@@ -20,7 +20,8 @@ transform = transforms.Compose([
 val_dataset = datasets.ImageFolder("1/test", transform=transform)
 val_loader = DataLoader(val_dataset,  batch_size=batch_size)
 
-path_to_model = 'models/emotion_model_8.pth'
+path_to_model = (f"models/{os.listdir("models")[-1]}")
+print(path_to_model)
 model = EmotionCNN()
 model.load_state_dict(torch.load(path_to_model, map_location=device))
 model.to(device)
