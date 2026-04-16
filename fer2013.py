@@ -109,7 +109,25 @@ def train():
     ])
 
     train_dataset = datasets.ImageFolder("1/train", transform=transform)
+<<<<<<< Updated upstream
     train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+=======
+
+    targets = [label for _, label in train_dataset.samples]
+    class_counts = torch.bincount(torch.tensor(targets))
+    class_weights = 1.0 / class_counts.float()
+    print(class_counts)
+    print(class_weights)
+    print(class_weights.sum())
+    class_weights = class_weights / class_weights.sum() 
+    print(class_weights)
+
+    sample_weights = class_weights[torch.tensor(targets)]
+    print(sample_weights)
+    print(len(sample_weights))
+    sampler = WeightedRandomSampler(weights=sample_weights, num_samples=len(sample_weights), replacement=True)
+    train_loader = DataLoader(train_dataset, batch_size=32, sampler=sampler)
+>>>>>>> Stashed changes
 
     images, labels = next(iter(train_loader))
 
