@@ -1,5 +1,5 @@
 from torchvision import datasets, transforms
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, WeightedRandomSampler
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
@@ -109,13 +109,25 @@ def train():
     ])
 
     train_dataset = datasets.ImageFolder("1/train", transform=transform)
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+
+    targets = [label for _, label in train_dataset.samples]
+    class_counts = torch.bincount(torch.tensor(targets))
+    class_weights = 1.0 / class_counts.float()
+    print(class_weights)
+    class_weights = class_weights / class_weights.sum() 
+    print(class_counts)
+    print(class_weights)
+
+    sample_weights = class_weights[torch.tensor(targets)]
+    sampler = WeightedRandomSampler(weights=sample_weights, num_samples=len(sample_weights), replacement=True)
+    train_loader = DataLoader(train_dataset, batch_size=32, sampler=sampler)
 
     images, labels = next(iter(train_loader))
 
     model = EmotionCNN().to(device)
 
-    lossfunc = nn.CrossEntropyLoss()
+    lossfunc = nn.CrossEntropyLoss() #Can add weights to here also.
+
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
 
     n_total_steps = len(train_loader)
@@ -139,8 +151,8 @@ def train():
     # torch.save(model.state_dict(), "emotion_cnn")
     save_model(model)
 
-    plt.imshow(images[0].squeeze(), cmap="gray")
+    #plt.imshow(images[0].squeeze(), cmap="gray")
     plt.title(labels[0].item())
     plt.show()
 
-# train()
+train()

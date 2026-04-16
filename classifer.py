@@ -20,7 +20,8 @@ transform = transforms.Compose([
 val_dataset = datasets.ImageFolder("1/test", transform=transform)
 val_loader = DataLoader(val_dataset,  batch_size=batch_size)
 
-path_to_model = 'models/emotion_model_8.pth'
+path_to_model = (f"models/{os.listdir("models")[-1]}")
+print(path_to_model)
 model = EmotionCNN()
 model.load_state_dict(torch.load(path_to_model, map_location=device))
 model.to(device)
@@ -61,7 +62,7 @@ def confusion_matrix(preds, targets, num_classes):
     cm = np.zeros((num_classes, num_classes), dtype=np.int64)
     for t, p in zip(targets, preds):
         cm[t, p] += (1)
-    cm = cm / np.array([100, 10, 50, ])
+    #cm = cm / np.array([100, 10, 50])
     return cm
 
 
@@ -77,4 +78,5 @@ plt.ylabel('True')
 plt.title('Confusion Matrix')
 plt.xticks(range(num_classes))
 plt.yticks(range(num_classes))
-plt.show()
+plt.savefig("confusion_matrix.png")
+#plt.show()
