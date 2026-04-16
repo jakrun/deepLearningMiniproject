@@ -20,21 +20,27 @@ transform = transforms.Compose([
 val_dataset = datasets.ImageFolder("1/test", transform=transform)
 val_loader = DataLoader(val_dataset,  batch_size=batch_size)
 
-path_to_model = (f"models/{os.listdir("models")[-1]}")
+path_to_model = "models/" + os.listdir("models")[-1]
 print(path_to_model)
 model = EmotionCNN()
 model.load_state_dict(torch.load(path_to_model, map_location=device))
 model.to(device)
 model.eval()
 
-all_preds = []
-all_targets = []
+all_preds    = []
+all_percents = []
+all_classes  = []
+all_targets  = []
 with torch.no_grad():
     for images, labels in val_loader:
         images = images.to(device)
-        logits = model(images)               # shape (N, C)
-        preds = torch.argmax(logits, dim=1)  # predicted class indices
+        logits = model(images)              # shape (N, C)
+        probs = torch.softmax(logits, dim=1)
+        preds = torch.argmax(logits, dim=1) # predicted class indices
+        percents = probs[ torch.arange(probs.size(0)), labels.to(device) ] # similar to preds, but instead of class indicies, it is percents of the target class
         all_preds.append(preds.cpu())
+        all_percents.append(percents.cpu())
+        all_classes.append(probs.cpu())
         all_targets.append(labels.cpu())
 
 def get_data_distribution(directory):
@@ -55,21 +61,33 @@ def confusion_matrix(preds, targets, num_classes):
     cm = np.zeros((num_classes, num_classes), dtype=np.int64)
     for t, p in zip(targets, preds):
         cm[t, p] += 1
-    # cm = cm / np.array([100, 10, 50, ])
+    return cm
+
+def confusion_matrix_percent(perc, targets, num_classes):
+    if len(perc[0]) != num_classes:
+        raise Exception(f'incorrect number of classes per prediction. len(perc[0]) = {len(perc[0])}')
+    cm = np.zeros((num_classes, num_classes), dtype=np.float32)
+    for t, p in zip(targets, perc):
+        for c in range(num_classes):
+            cm[t, c] += p[c]/test_dist[t]
     return cm
 
 num_classes = 7
-all_preds = torch.cat(all_preds).cpu().numpy().ravel()
-all_targets = torch.cat(all_targets).cpu().numpy().ravel()
+
+all_preds    = torch.cat(all_preds   ).cpu().numpy().ravel()
+all_percents = torch.cat(all_percents).cpu().numpy().ravel()
+all_classes  = torch.cat(all_classes ).cpu().numpy()
+print(f'all_classes shape: {np.shape(all_classes)}')
+all_targets  = torch.cat(all_targets ).cpu().numpy().ravel()
+
 train_dist = get_data_distribution('train')
-test_dist = get_data_distribution('test')
+test_dist  = get_data_distribution('test')
 print(f'train distribution: {train_dist}')
 print(f'test distribution: {test_dist}')
 
 # choose which model quality analysis test to check
-match 2:
-    # confusion matrix
-    case 1:
+match 3:
+    case 1: # confusion matrix
         cm = confusion_matrix(all_preds, all_targets, num_classes=num_classes)
 
         plt.imshow(cm, interpolation='nearest', cmap='Blues')
@@ -80,8 +98,7 @@ match 2:
         plt.xticks(range(num_classes))
         plt.yticks(range(num_classes))
         plt.show()
-    # total accuracy + precision/recall for each class
-    case 2:
+    case 2: # total accuracy + precision/recall for each class
         accuracy = 0
         total_samples = 0
         # TP, FP, FN
@@ -105,4 +122,15 @@ match 2:
             except: recall = 0
             
             print(f'{c:>4} | {precision:.2f} | {recall:.2f}')
-        
+    case 3: # confusion matrix using percentages of each class
+        cm = confusion_matrix_percent(all_classes, all_targets, num_classes=num_classes)
+
+        plt.imshow(cm, interpolation='nearest', cmap='Blues')
+        plt.colorbar()
+        plt.xlabel('Predicted')
+        plt.ylabel('True')
+        plt.title('Confusion Matrix')
+        plt.xticks(range(num_classes))
+        plt.yticks(range(num_classes))
+        plt.show()
+
