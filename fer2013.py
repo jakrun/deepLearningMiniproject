@@ -34,32 +34,29 @@ class EmotionCNN(nn.Module):
         super(EmotionCNN, self).__init__()
 
         self.network = nn.Sequential(
-            nn.Conv2d(1, 32, 3, padding=1),
-            # nn.BatchNorm2d(32),
+            # 48x48
+            nn.Conv2d(1, 16, 3, padding=1),
+            nn.BatchNorm2d(16),
             nn.ReLU(),
             # 48
             nn.MaxPool2d(2),
-
-            # nn.Dropout(0.25),
             # 24
+            nn.Conv2d(16, 32, 3, padding=1),
+            nn.BatchNorm2d(32),
+            nn.ReLU(),
+            # 24
+            nn.MaxPool2d(2),
+            # 12
+            
             nn.Conv2d(32, 64, 3, padding=1),
-            # nn.BatchNorm2d(32),
-            nn.ReLU(),
-            # 24
-            nn.MaxPool2d(2),
-            
-            # nn.Dropout(0.25),
-            # 12
-            nn.Conv2d(64, 128, 3, padding=1),
+            nn.BatchNorm2d(64),
             nn.ReLU(),
             # 12
             nn.MaxPool2d(2),
-            
-            # nn.Dropout(0.25),
             # 6
             nn.Flatten(),
-            # 2048
-            nn.Linear(6*6*128, 256),
+            # 6*6*32 = 1152
+            nn.Linear(6*6*64, 256),
             nn.ReLU(),
             
             nn.Dropout(0.5),
@@ -96,9 +93,9 @@ class EmotionCNN(nn.Module):
 def train():
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    num_epochs = 4
+    num_epochs = 40
     batch_size = 32
-    learning_rate = 0.001
+    learning_rate = 0.0001
 
     transform = transforms.Compose([
         transforms.Grayscale(),            # ensure 1 channel
@@ -108,7 +105,7 @@ def train():
         transforms.Normalize((0.5,), (0.5,))
     ])
 
-    train_dataset = datasets.ImageFolder("1/train", transform=transform)
+    train_dataset = datasets.ImageFolder("train", transform=transform)
     targets = [label for _, label in train_dataset.samples]
     class_counts = torch.bincount(torch.tensor(targets))
     class_weights = 1.0 / class_counts.float()
@@ -156,4 +153,4 @@ def train():
     plt.title(labels[0].item())
     plt.show()
 
-# train()
+train()
