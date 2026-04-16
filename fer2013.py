@@ -1,5 +1,5 @@
 from torchvision import datasets, transforms
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, WeightedRandomSampler
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
@@ -109,10 +109,6 @@ def train():
     ])
 
     train_dataset = datasets.ImageFolder("1/train", transform=transform)
-<<<<<<< Updated upstream
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
-=======
-
     targets = [label for _, label in train_dataset.samples]
     class_counts = torch.bincount(torch.tensor(targets))
     class_weights = 1.0 / class_counts.float()
@@ -127,7 +123,6 @@ def train():
     print(len(sample_weights))
     sampler = WeightedRandomSampler(weights=sample_weights, num_samples=len(sample_weights), replacement=True)
     train_loader = DataLoader(train_dataset, batch_size=32, sampler=sampler)
->>>>>>> Stashed changes
 
     images, labels = next(iter(train_loader))
 
