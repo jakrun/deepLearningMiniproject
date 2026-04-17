@@ -31,69 +31,48 @@ def save_model(model, model_dir="models"):
 
 class EmotionCNN(nn.Module):
     def __init__(self):
-        super(EmotionCNN, self).__init__()
+        super().__init__()
 
-        self.network = nn.Sequential(
-            # 48x48
-            nn.Conv2d(1, 16, 3, padding=1),
-            nn.BatchNorm2d(16),
-            nn.ReLU(),
-            # 48
-            nn.MaxPool2d(2),
-            # 24
-            nn.Conv2d(16, 32, 3, padding=1),
+        # Convolutional
+        self.features = nn.Sequential(
+            # Block 1: 48x48 -> 24x24
+            nn.Conv2d(1, 32, kernel_size=3, padding=1),
             nn.BatchNorm2d(32),
-            nn.ReLU(),
-            # 24
+            nn.ReLU(inplace=True),
+
+            nn.Conv2d(32, 32, kernel_size=3, padding=1),
+            nn.BatchNorm2d(32),
+            nn.ReLU(inplace=True),
+
             nn.MaxPool2d(2),
-            # 12
             
+            # Block 2: 24x24 -> 12x12
             nn.Conv2d(32, 64, 3, padding=1),
             nn.BatchNorm2d(64),
-            nn.ReLU(),
-            # 12
-            nn.MaxPool2d(2),
-            # 6
+            nn.ReLU(inplace=True),
+
+            nn.Conv2d(64, 64, 3, padding=1),
+            nn.BatchNorm2d(64),
+            nn.ReLU(inplace=True),
+
+            nn.MaxPool2d(2)
+        )
+        self.classifier = nn.Sequential(
+            nn.AdaptiveAvgPool2d((1,1)),
             nn.Flatten(),
-            # 6*6*32 = 1152
-            nn.Linear(6*6*64, 256),
-            nn.ReLU(),
-            
-            nn.Dropout(0.5),
-            # 256
-            nn.Linear(256, 64),
-            nn.ReLU(),
-            # 64,
             nn.Linear(64, 7)
-
-            # 7
-
         )
 
-        # self.conv1 = nn.Conv2d(1, 6, 3)
-        # self.conv2 = nn.Conv2d(6, 16, 4)
-
-        # self.pool = nn.MaxPool2d(2, 2)
-
-        # self.fc1 = nn.Linear(10*10*16, 256)
-        # self.fc2 = nn.Linear(256, 64)
-        # self.fc3 = nn.Linear(64, 7)
-
     def forward(self, x):
-        # x = self.pool(F.relu(self.conv1(x)))
-        # x = self.pool(F.relu(self.conv2(x)))
-        # x = x.view(-1, 10*10*16)
-        # x = F.relu(self.fc1(x))
-        # x = F.relu(self.fc2(x))
-        # x = self.fc3(x)
-        x = self.network(x)
+        x = self.features(x)
+        x = self.classifier(x)
         return x
 
 
 def train():
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    num_epochs = 40
+    num_epochs = 10
     batch_size = 32
     learning_rate = 0.0001
 
@@ -112,13 +91,15 @@ def train():
     print(class_counts)
     print(class_weights)
     print(class_weights.sum())
-    class_weights = class_weights / class_weights.sum() 
+    # class_weights = class_weights / class_weights.sum() 
     print(class_weights)
 
     sample_weights = class_weights[torch.tensor(targets)]
     print(sample_weights)
     print(len(sample_weights))
+    
     sampler = WeightedRandomSampler(weights=sample_weights, num_samples=len(sample_weights), replacement=True)
+
     train_loader = DataLoader(train_dataset, batch_size=32, sampler=sampler)
 
     images, labels = next(iter(train_loader))
@@ -130,6 +111,8 @@ def train():
 
     n_total_steps = len(train_loader)
     for epoch in range(num_epochs):
+        total_loss=0.0
+        total_samples=0
         for i, (images, labels) in enumerate(train_loader):
             images = images.to(device)
             labels = labels.to(device)
@@ -143,8 +126,12 @@ def train():
             loss.backward()
             optimizer.step()
 
-            if (i+1) % 100 == 0:
-                print (f'Epoch [{epoch+1}/{num_epochs}], Step [{i+1}/{n_total_steps}], Loss: {loss.item():.4f}')
+            batch_size = labels.size(0)
+            total_loss += loss.item() * batch_size
+            total_samples += batch_size
+
+        epoch_loss = total_loss / total_samples
+        print(f"Epoch [{epoch+1}/{num_epochs}], Avg Loss: {epoch_loss:.4f}")
 
     # torch.save(model.state_dict(), "emotion_cnn")
     save_model(model)
