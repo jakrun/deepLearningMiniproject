@@ -7,7 +7,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import os
 import re
-import math
+import time
 
 def get_next_model_path(model_dir="models", prefix="emotion_model", suffix=".pth"):
     os.makedirs(model_dir, exist_ok=True)
@@ -28,6 +28,23 @@ def save_model(model, model_dir="models"):
     path = get_next_model_path(model_dir)
     torch.save(model.state_dict(), path)
     print(f"Saved model to {path}")
+
+def save_checkpoint(model, optimizer, epoch, path="checkpoint.pth"):
+    torch.save({
+        "epoch": epoch,
+        "model_state": model.state_dict(),
+        "optimizer_state": optimizer.state_dict(),
+    }, path)
+
+
+def load_checkpoint(model, optimizer, device, path="checkpoint.pth"):
+    checkpoint = torch.load(path, map_location=device)
+
+    model.load_state_dict(checkpoint["model_state"])
+    optimizer.load_state_dict(checkpoint["optimizer_state"])
+
+    print(f"Loaded checkpoint from epoch {checkpoint['epoch']}")
+    return checkpoint["epoch"] + 1
 
 class EmotionCNN(nn.Module):
     def __init__(self):
@@ -72,9 +89,13 @@ class EmotionCNN(nn.Module):
 def train():
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-    num_epochs = 10
+    num_epochs = 100
     batch_size = 32
     learning_rate = 0.0001
+
+    # Checkpointing variables for ai-lab
+    use_checkpointing = True # choose if u want to use checkpoints
+    MAX_RUNTIME = 19 # minutes
 
     transform = transforms.Compose([
         transforms.Grayscale(),            # ensure 1 channel
@@ -100,7 +121,7 @@ def train():
     
     sampler = WeightedRandomSampler(weights=sample_weights, num_samples=len(sample_weights), replacement=True)
 
-    train_loader = DataLoader(train_dataset, batch_size=32, sampler=sampler)
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, sampler=sampler)
 
     images, labels = next(iter(train_loader))
 
@@ -109,8 +130,21 @@ def train():
     lossfunc = nn.CrossEntropyLoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
 
-    n_total_steps = len(train_loader)
-    for epoch in range(num_epochs):
+    start_epoch = 0
+
+    if use_checkpointing and os.path.exists("checkpoint.pth"):
+        start_epoch = load_checkpoint(model, optimizer, device)
+
+    # n_total_steps = len(train_loader)
+    if use_checkpointing:
+        start_time = time.time()
+        runtime_seconds = MAX_RUNTIME * 60
+
+
+
+    for epoch in range(start_epoch, num_epochs):
+        model.train()
+
         total_loss=0.0
         total_samples=0
         for i, (images, labels) in enumerate(train_loader):
@@ -126,12 +160,20 @@ def train():
             loss.backward()
             optimizer.step()
 
-            batch_size = labels.size(0)
-            total_loss += loss.item() * batch_size
-            total_samples += batch_size
+            if use_checkpointing:
+                if time.time() - start_time > runtime_seconds:
+                    print("Time limit reached. Saving checkpoint...")
+                    save_checkpoint(model, optimizer, epoch)
+                    return
+
+            curr_batch_size = labels.size(0)
+            total_loss += loss.item() * curr_batch_size
+            total_samples += curr_batch_size
 
         epoch_loss = total_loss / total_samples
         print(f"Epoch [{epoch+1}/{num_epochs}], Avg Loss: {epoch_loss:.4f}")
+        if use_checkpointing:
+            save_checkpoint(model, optimizer, epoch)
 
     # torch.save(model.state_dict(), "emotion_cnn")
     save_model(model)
