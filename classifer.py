@@ -18,6 +18,36 @@ emotions = [
     'surp'
     ]
 
+device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+batch_size = 32
+
+transform = transforms.Compose([
+    transforms.Grayscale(),          # ensure 1 channel
+    transforms.Resize((48, 48)),     # FER standard size
+    transforms.RandomHorizontalFlip(),
+    transforms.ToTensor(),
+    transforms.Normalize((0.5,), (0.5,))
+])
+val_dataset = datasets.ImageFolder("1/test", transform=transform)
+val_loader = DataLoader(val_dataset,  batch_size=batch_size)
+
+path_to_model = f"models/{os.listdir('models')[-1]}"
+print(path_to_model)
+model = EmotionCNN()
+model.load_state_dict(torch.load(path_to_model, map_location=device))
+model.to(device)
+model.eval()
+
+all_preds = []
+all_targets = []
+with torch.no_grad():
+    for images, labels in val_loader:
+        images = images.to(device)
+        logits = model(images)               # shape (N, C)
+        preds = torch.argmax(logits, dim=1)  # predicted class indices
+        all_preds.append(preds.cpu())
+        all_targets.append(labels.cpu())
+
 def get_data_distribution(directory):
     emotion_dist = []
     base = f"1/{directory}"
@@ -73,22 +103,31 @@ def precision_recall(all_preds, all_targets):
         print(f'{c:>4} | {precision:.2f} | {recall:.2f}')
 
 def game_time(images, perc, targets):
-    print(f'shape of list images {np.shape(images)}')
     total_samples = len(images)
-    for _ in range(20):
+    # user score, model score
+    tally = [0, 0]
+    image_count = 40
+    for image_num in range(image_count):
         i = int(random.random()*total_samples)
         plt.imshow(images[i].squeeze(), cmap="gray")
         plt.show()
-        user_input = input(' user guess: ')
+        user_input = input('> ')
         if user_input not in ['0','1','2','3','4','5','6','7']:
             user_input = '0'
         user_input = int(user_input)
-        model_guess = [f'   {emotions[j]} {"."*(round(perc[i][j]*20))}' for j in range(num_classes)]
-        model_guess[targets[i]] = ' D' + model_guess[targets[i]][2:]
-        model_guess[user_input] = 'U' + model_guess[user_input][1:]
-        model_guess = '\n'.join(model_guess)
-        print(            f' data label: {targets[i]}')
-        print(            f'model guess: \n{model_guess}')
+
+        model_guess = [[emotions[j], perc[i][j]] for j in range(num_classes)]
+        model_guess.sort(key=lambda item: item[1], reverse=True)
+        top3 = ' | '.join([f'{emo[0]} {round(emo[1]*100)}%' for emo in model_guess[:3]])
+    
+        print(f'user guess: {emotions[user_input]}')
+        print(f'data label: {emotions[targets[i]]}')
+        print(f'modl guess: {top3}')
+        if user_input == targets[i]:
+            tally[0] += 1
+        if model_guess[0][0] == emotions[targets[i]]:
+            tally[1] += 1
+        print(f'image {image_num+1}/{image_count} score: {tally[0]}-{tally[1]}')
         plt.imshow(images[i].squeeze(), cmap="gray")
         plt.show()
 
@@ -145,8 +184,9 @@ print(f'test distribution: {test_dist}')
 precision_recall(all_preds, all_targets)
 
 # choose which model quality analysis test to check
-match 3:
-    case 1: # confusion matrix
+match 3 :
+    # confusion matrix
+    case 1:
         cm = confusion_matrix(all_preds, all_targets, num_classes=num_classes)
 
         plt.imshow(cm, interpolation='nearest', cmap='Blues')
