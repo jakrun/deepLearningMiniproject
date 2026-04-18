@@ -94,7 +94,7 @@ def train():
     learning_rate = 0.0001
 
     # Checkpointing variables for ai-lab
-    use_checkpointing = True # choose if u want to use checkpoints
+    use_checkpointing = False # choose if u want to use checkpoints
     MAX_RUNTIME = 19 # minutes
 
     transform = transforms.Compose([
@@ -105,7 +105,7 @@ def train():
         transforms.Normalize((0.5,), (0.5,))
     ])
 
-    train_dataset = datasets.ImageFolder("train", transform=transform)
+    train_dataset = datasets.ImageFolder("1/train", transform=transform)
     targets = [label for _, label in train_dataset.samples]
     class_counts = torch.bincount(torch.tensor(targets))
     class_weights = 1.0 / class_counts.float()
@@ -178,8 +178,9 @@ def train():
     # torch.save(model.state_dict(), "emotion_cnn")
     save_model(model)
 
-    plt.imshow(images[0].squeeze(), cmap="gray")
+    plt.imshow(images[0].cpu().squeeze(), cmap="gray")
     plt.title(labels[0].item())
     plt.show()
 
-train()
+if __name__ == "__main__":
+    train()

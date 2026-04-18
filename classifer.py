@@ -20,7 +20,7 @@ transform = transforms.Compose([
 val_dataset = datasets.ImageFolder("1/test", transform=transform)
 val_loader = DataLoader(val_dataset,  batch_size=batch_size)
 
-path_to_model = (f"models/{os.listdir("models")[-1]}")
+path_to_model = f"models/{os.listdir('models')[-1]}"
 print(path_to_model)
 model = EmotionCNN()
 model.load_state_dict(torch.load(path_to_model, map_location=device))
@@ -67,7 +67,7 @@ print(f'train distribution: {train_dist}')
 print(f'test distribution: {test_dist}')
 
 # choose which model quality analysis test to check
-match 2:
+match 1:
     # confusion matrix
     case 1:
         cm = confusion_matrix(all_preds, all_targets, num_classes=num_classes)
