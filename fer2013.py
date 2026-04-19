@@ -47,43 +47,76 @@ def load_checkpoint(model, optimizer, device, path="checkpoint.pth"):
     return checkpoint["epoch"] + 1
 
 class EmotionCNN(nn.Module):
-    def __init__(self):
+    def __init__(self, dropout=0.4):
         super().__init__()
 
         # Convolutional
         self.features = nn.Sequential(
             # Block 1: 48x48 -> 24x24
-            nn.Conv2d(1, 32, kernel_size=3, padding=1),
-            nn.BatchNorm2d(32),
+            nn.Conv2d(1, 64, kernel_size=3, padding=1),
+            nn.BatchNorm2d(64),
             nn.ReLU(inplace=True),
 
-            nn.Conv2d(32, 32, kernel_size=3, padding=1),
-            nn.BatchNorm2d(32),
+            nn.Conv2d(64, 64, kernel_size=3, padding=1),
+            nn.BatchNorm2d(64),
             nn.ReLU(inplace=True),
 
             nn.MaxPool2d(2),
-            
+
             # Block 2: 24x24 -> 12x12
-            nn.Conv2d(32, 64, 3, padding=1),
-            nn.BatchNorm2d(64),
+            nn.Conv2d(64, 128, 3, padding=1),
+            nn.BatchNorm2d(128),
             nn.ReLU(inplace=True),
 
-            nn.Conv2d(64, 64, 3, padding=1),
-            nn.BatchNorm2d(64),
+            nn.Conv2d(128, 128, 3, padding=1),
+            nn.BatchNorm2d(128),
             nn.ReLU(inplace=True),
 
-            nn.MaxPool2d(2)
+            nn.MaxPool2d(2),
+
+            # Block 3: 12x12 -> 6x6
+            nn.Conv2d(128, 256, 3, padding=1),
+            nn.BatchNorm2d(256),
+            nn.ReLU(inplace=True),
+
+            nn.Conv2d(256, 256, 3, padding=1),
+            nn.BatchNorm2d(256),
+            nn.ReLU(inplace=True),
+
+            nn.MaxPool2d(2),
         )
         self.classifier = nn.Sequential(
-            nn.AdaptiveAvgPool2d((1,1)),
+            nn.AdaptiveAvgPool2d((1, 1)),
             nn.Flatten(),
-            nn.Linear(64, 7)
+            nn.Dropout(dropout),
+            nn.Linear(256, 128),
+            nn.ReLU(inplace=True),
+            nn.Dropout(dropout),
+            nn.Linear(128, 7),
         )
 
     def forward(self, x):
         x = self.features(x)
         x = self.classifier(x)
         return x
+
+
+def evaluate(model, loader, device, lossfunc):
+    model.eval()
+    total_loss = 0.0
+    total_correct = 0
+    total_samples = 0
+    with torch.no_grad():
+        for images, labels in loader:
+            images = images.to(device)
+            labels = labels.to(device)
+            logits = model(images)
+            loss = lossfunc(logits, labels)
+            preds = logits.argmax(dim=1)
+            total_loss += loss.item() * labels.size(0)
+            total_correct += (preds == labels).sum().item()
+            total_samples += labels.size(0)
+    return total_loss / total_samples, total_correct / total_samples
 
 
 def train():
@@ -105,7 +138,16 @@ def train():
         transforms.Normalize((0.5,), (0.5,))
     ])
 
+    val_transform = transforms.Compose([
+        transforms.Grayscale(),
+        transforms.Resize((48, 48)),
+        transforms.ToTensor(),
+        transforms.Normalize((0.5,), (0.5,))
+    ])
+
     train_dataset = datasets.ImageFolder("1/train", transform=transform)
+    val_dataset = datasets.ImageFolder("1/test", transform=val_transform)
+    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
     targets = [label for _, label in train_dataset.samples]
     class_counts = torch.bincount(torch.tensor(targets))
     class_weights = 1.0 / class_counts.float()
@@ -131,6 +173,7 @@ def train():
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
 
     start_epoch = 0
+    best_val_acc = 0.0
 
     if use_checkpointing and os.path.exists("checkpoint.pth"):
         start_epoch = load_checkpoint(model, optimizer, device)
@@ -171,11 +214,20 @@ def train():
             total_samples += curr_batch_size
 
         epoch_loss = total_loss / total_samples
-        print(f"Epoch [{epoch+1}/{num_epochs}], Avg Loss: {epoch_loss:.4f}")
+        val_loss, val_acc = evaluate(model, val_loader, device, lossfunc)
+        marker = ""
+        if val_acc > best_val_acc:
+            best_val_acc = val_acc
+            torch.save(model.state_dict(), "best.pth")
+            marker = "  <- new best, saved best.pth"
+        print(f"Epoch [{epoch+1}/{num_epochs}]  train_loss: {epoch_loss:.4f}  val_loss: {val_loss:.4f}  val_acc: {val_acc*100:.2f}%{marker}")
         if use_checkpointing:
             save_checkpoint(model, optimizer, epoch)
 
-    # torch.save(model.state_dict(), "emotion_cnn")
+    print(f"Best val accuracy: {best_val_acc*100:.2f}%")
+    # archive the best model (not the last-epoch model)
+    if os.path.exists("best.pth"):
+        model.load_state_dict(torch.load("best.pth", map_location=device))
     save_model(model)
 
     plt.imshow(images[0].cpu().squeeze(), cmap="gray")

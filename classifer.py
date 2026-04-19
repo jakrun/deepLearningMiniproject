@@ -13,14 +13,16 @@ batch_size = 32
 transform = transforms.Compose([
     transforms.Grayscale(),          # ensure 1 channel
     transforms.Resize((48, 48)),     # FER standard size
-    transforms.RandomHorizontalFlip(),
     transforms.ToTensor(),
     transforms.Normalize((0.5,), (0.5,))
 ])
 val_dataset = datasets.ImageFolder("1/test", transform=transform)
 val_loader = DataLoader(val_dataset,  batch_size=batch_size)
 
-path_to_model = f"models/{os.listdir('models')[-1]}"
+if os.path.exists("best.pth"):
+    path_to_model = "best.pth"
+else:
+    path_to_model = os.path.join("models", sorted(os.listdir("models"))[-1])
 print(path_to_model)
 model = EmotionCNN()
 model.load_state_dict(torch.load(path_to_model, map_location=device))
@@ -66,19 +68,31 @@ test_dist = get_data_distribution('test')
 print(f'train distribution: {train_dist}')
 print(f'test distribution: {test_dist}')
 
+EMOTIONS = ["angry", "disgust", "fear", "happy", "neutral", "sad", "surprise"]
+
 # choose which model quality analysis test to check
 match 1:
     # confusion matrix
     case 1:
         cm = confusion_matrix(all_preds, all_targets, num_classes=num_classes)
+        # Row-normalize: each cell = fraction of true class predicted as that column.
+        # Diagonal cells now read as per-class recall.
+        row_sums = cm.sum(axis=1, keepdims=True)
+        cm_norm = np.divide(cm.astype(np.float64), row_sums, where=row_sums > 0)
 
-        plt.imshow(cm, interpolation='nearest', cmap='Blues')
-        plt.colorbar()
+        plt.imshow(cm_norm, interpolation='nearest', cmap='Blues', vmin=0, vmax=1)
+        plt.colorbar(label='Recall')
         plt.xlabel('Predicted')
         plt.ylabel('True')
-        plt.title('Confusion Matrix')
-        plt.xticks(range(num_classes))
-        plt.yticks(range(num_classes))
+        plt.title('Confusion Matrix (row-normalized)')
+        plt.xticks(range(num_classes), EMOTIONS, rotation=45, ha='right')
+        plt.yticks(range(num_classes), EMOTIONS)
+        for i in range(num_classes):
+            for j in range(num_classes):
+                val = cm_norm[i, j]
+                color = 'white' if val > 0.5 else 'black'
+                plt.text(j, i, f'{val * 100:.0f}', ha='center', va='center', color=color, fontsize=9)
+        plt.tight_layout()
         plt.show()
     # total accuracy + precision/recall for each class
     case 2:
