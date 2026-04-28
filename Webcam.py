@@ -23,10 +23,13 @@ EMOTION_COLORS = {
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 model = EmotionCNN()
 models_dir = "models"
-if os.path.isdir(models_dir) and os.listdir(models_dir):
-    model_path = os.path.join(models_dir, sorted(os.listdir(models_dir))[-1])
+if os.path.exists("best.pth"):
+    model_path = "best.pth"
 else:
-    print("No models found in 'models' directory.")
+    if os.path.isdir(models_dir) and os.listdir(models_dir):
+        model_path = os.path.join(models_dir, sorted(os.listdir(models_dir))[-1])
+    else:
+        print("No models found in 'models' directory.")
 print(f"Loading {model_path}")
 model.load_state_dict(torch.load(model_path, map_location=device))
 model.to(device)
@@ -97,7 +100,7 @@ class App:
                 face_coords = face_cascade.detectMultiScale(gray, scaleFactor=1.2, minNeighbors=5, minSize=(48, 48))
                 if self.frame_count >= 15:
                     if len(face_coords) > 0:
-                        self.frame_count = 0
+                        # self.frame_count = 0
                         self.last_boxes = []
                         self.last_text = []
                         for x, y, w, h in face_coords:

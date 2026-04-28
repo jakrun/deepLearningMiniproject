@@ -24,14 +24,16 @@ batch_size = 32
 transform = transforms.Compose([
     transforms.Grayscale(),          # ensure 1 channel
     transforms.Resize((48, 48)),     # FER standard size
-    transforms.RandomHorizontalFlip(),
     transforms.ToTensor(),
     transforms.Normalize((0.5,), (0.5,))
 ])
 val_dataset = datasets.ImageFolder("1/test", transform=transform)
 val_loader = DataLoader(val_dataset,  batch_size=batch_size)
 
-path_to_model = f"models/{os.listdir('models')[-1]}"
+if os.path.exists("best.pth"):
+    path_to_model = "best.pth"
+else:
+    path_to_model = os.path.join("models", sorted(os.listdir("models"))[-1])
 print(path_to_model)
 model = EmotionCNN()
 model.load_state_dict(torch.load(path_to_model, map_location=device))
@@ -40,13 +42,18 @@ model.eval()
 
 all_preds = []
 all_targets = []
+all_classes = []
+all_images = []
 with torch.no_grad():
     for images, labels in val_loader:
         images = images.to(device)
         logits = model(images)               # shape (N, C)
         preds = torch.argmax(logits, dim=1)  # predicted class indices
+        probs = torch.softmax(logits, dim=1)
         all_preds.append(preds.cpu())
         all_targets.append(labels.cpu())
+        all_classes.append(probs.cpu())
+        all_images.append(images)
 
 def get_data_distribution(directory):
     emotion_dist = []
@@ -67,40 +74,6 @@ def confusion_matrix(preds, targets, num_classes):
     for t, p in zip(targets, preds):
         cm[t, p] += 1
     return cm
-
-def confusion_matrix_percent(perc, targets, num_classes):
-    if len(perc[0]) != num_classes:
-        raise Exception(f'incorrect number of classes per prediction. len(perc[0]) = {len(perc[0])}')
-    cm = np.zeros((num_classes, num_classes), dtype=np.float32)
-    for t, p in zip(targets, perc):
-        for c in range(num_classes):
-            cm[t, c] += p[c]/test_dist[t]
-    return cm
-
-def precision_recall(all_preds, all_targets):
-    accuracy = 0
-    total_samples = 0
-    # TP, FP, FN
-    class_accuracy = [[0, 0, 0], [0, 0, 0], [0, 0, 0], [0, 0, 0], [0, 0, 0], [0, 0, 0], [0, 0, 0]]
-    for t, p in zip(all_targets, all_preds):
-        if t == p:
-            accuracy += 1
-            class_accuracy[t][0] += 1
-        else:
-            class_accuracy[p][1] += 1
-            class_accuracy[t][2] += 1
-        total_samples += 1
-    print(f'total accuracy: {(accuracy/total_samples):.2f}')
-    print('clas | prec | reca')
-    print('-----+------+-----')
-    for c in range(num_classes):
-        try: precision = class_accuracy[c][0]/(class_accuracy[c][0]+class_accuracy[c][1])
-        except: precision = 0
-        
-        try: recall = class_accuracy[c][0]/(class_accuracy[c][0]+class_accuracy[c][2])
-        except: recall = 0
-        
-        print(f'{c:>4} | {precision:.2f} | {recall:.2f}')
 
 def game_time(images, perc, targets):
     total_samples = len(images)
@@ -131,82 +104,68 @@ def game_time(images, perc, targets):
         plt.imshow(images[i].squeeze(), cmap="gray")
         plt.show()
 
-device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-batch_size = 32
+
 num_classes = 7
-
-transform = transforms.Compose([
-    transforms.Grayscale(),          # ensure 1 channel
-    transforms.Resize((48, 48)),     # FER standard size
-    transforms.RandomHorizontalFlip(),
-    transforms.ToTensor(),
-    transforms.Normalize((0.5,), (0.5,))
-])
-val_dataset = datasets.ImageFolder("1/test", transform=transform)
-val_loader = DataLoader(val_dataset,  batch_size=batch_size)
-
-path_to_model = "models/" + os.listdir("models")[-1]
-print(f'testing model: {path_to_model}')
-model = EmotionCNN()
-model.load_state_dict(torch.load(path_to_model, map_location=device))
-model.to(device)
-model.eval()
-
-all_images   = []
-all_preds    = []
-all_percents = []
-all_classes  = []
-all_targets  = []
-with torch.no_grad():
-    for images, labels in val_loader:
-        images = images.to(device)
-        all_images.append(images)
-        logits = model(images)              # shape (N, C)
-        probs = torch.softmax(logits, dim=1)
-        preds = torch.argmax(logits, dim=1) # predicted class indices
-        percents = probs[ torch.arange(probs.size(0)), labels.to(device) ] # similar to preds, but instead of class indicies, it is percents of the target class
-        all_preds.append(preds.cpu())
-        all_percents.append(percents.cpu())
-        all_classes.append(probs.cpu())
-        all_targets.append(labels.cpu())
-
-all_images   = torch.cat(all_images  ).cpu().numpy()
-all_preds    = torch.cat(all_preds   ).cpu().numpy().ravel()
-all_percents = torch.cat(all_percents).cpu().numpy().ravel()
+all_preds = torch.cat(all_preds).cpu().numpy().ravel()
+all_targets = torch.cat(all_targets).cpu().numpy().ravel()
 all_classes  = torch.cat(all_classes ).cpu().numpy()
-all_targets  = torch.cat(all_targets ).cpu().numpy().ravel()
-
+all_images   = torch.cat(all_images  ).cpu().numpy()
 train_dist = get_data_distribution('train')
-test_dist  = get_data_distribution('test')
+test_dist = get_data_distribution('test')
 print(f'train distribution: {train_dist}')
 print(f'test distribution: {test_dist}')
 
-precision_recall(all_preds, all_targets)
+EMOTIONS = ["angry", "disgust", "fear", "happy", "neutral", "sad", "surprise"]
 
 # choose which model quality analysis test to check
-match 3 :
+match 2:
     # confusion matrix
     case 1:
         cm = confusion_matrix(all_preds, all_targets, num_classes=num_classes)
+        # Row-normalize: each cell = fraction of true class predicted as that column.
+        # Diagonal cells now read as per-class recall.
+        row_sums = cm.sum(axis=1, keepdims=True)
+        cm_norm = np.divide(cm.astype(np.float64), row_sums, where=row_sums > 0)
 
-        plt.imshow(cm, interpolation='nearest', cmap='Blues')
-        plt.colorbar()
+        plt.imshow(cm_norm, interpolation='nearest', cmap='Blues', vmin=0, vmax=1)
+        plt.colorbar(label='Recall')
         plt.xlabel('Predicted')
         plt.ylabel('True')
-        plt.title('Confusion Matrix')
-        plt.xticks(range(num_classes))
-        plt.yticks(range(num_classes))
+        plt.title('Confusion Matrix (row-normalized)')
+        plt.xticks(range(num_classes), EMOTIONS, rotation=45, ha='right')
+        plt.yticks(range(num_classes), EMOTIONS)
+        for i in range(num_classes):
+            for j in range(num_classes):
+                val = cm_norm[i, j]
+                color = 'white' if val > 0.5 else 'black'
+                plt.text(j, i, f'{val * 100:.0f}', ha='center', va='center', color=color, fontsize=9)
+        plt.tight_layout()
         plt.show()
-    case 2: # confusion matrix using percentages of each class
-        cm = confusion_matrix_percent(all_classes, all_targets, num_classes=num_classes)
-
-        plt.imshow(cm, interpolation='nearest', cmap='Blues')
-        plt.colorbar()
-        plt.xlabel('Predicted')
-        plt.ylabel('True')
-        plt.title('Confusion Matrix')
-        plt.xticks(range(num_classes))
-        plt.yticks(range(num_classes))
-        plt.show()
-    case 3: # game time !
+    # total accuracy + precision/recall for each class
+    case 2:
+        accuracy = 0
+        total_samples = 0
+        # TP, FP, FN
+        class_accuracy = [[0, 0, 0], [0, 0, 0], [0, 0, 0], [0, 0, 0], [0, 0, 0], [0, 0, 0], [0, 0, 0]]
+        for t, p in zip(all_targets, all_preds):
+            if t == p:
+                accuracy += 1
+                class_accuracy[t][0] += 1
+            else:
+                class_accuracy[p][1] += 1
+                class_accuracy[t][2] += 1
+            total_samples += 1
+        print(f'total accuracy: {(accuracy/total_samples):.2f}')
+        print('clas | prec | reca')
+        print('-----+------+-----')
+        for c in range(num_classes):
+            try: precision = class_accuracy[c][0]/(class_accuracy[c][0]+class_accuracy[c][1])
+            except: precision = 0
+            
+            try: recall = class_accuracy[c][0]/(class_accuracy[c][0]+class_accuracy[c][2])
+            except: recall = 0
+            
+            print(f'{c:>4} | {precision:.2f} | {recall:.2f}')
+    # game time
+    case 3:
         game_time(all_images, all_classes, all_targets)
