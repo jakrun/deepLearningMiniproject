@@ -1,5 +1,5 @@
 from torchvision import datasets, transforms
-from torch.utils.data import DataLoader, WeightedRandomSampler
+from torch.utils.data import DataLoader, WeightedRandomSampler, random_split
 import matplotlib.pyplot as plt
 import numpy as np
 import torch
@@ -53,17 +53,28 @@ class EmotionCNN(nn.Module):
         # Convolutional
         self.features = nn.Sequential(
             # Block 1: 48x48 -> 24x24
-            nn.Conv2d(1, 64, kernel_size=3, padding=1),
-            nn.BatchNorm2d(64),
+            nn.Conv2d(1, 32, kernel_size=3, padding=1),
+            nn.BatchNorm2d(32),
             nn.ReLU(inplace=True),
 
-            nn.Conv2d(64, 64, kernel_size=3, padding=1),
-            nn.BatchNorm2d(64),
+            nn.Conv2d(32, 32, kernel_size=3, padding=1),
+            nn.BatchNorm2d(32),
             nn.ReLU(inplace=True),
 
             nn.MaxPool2d(2),
 
             # Block 2: 24x24 -> 12x12
+            nn.Conv2d(32, 64, 3, padding=1),
+            nn.BatchNorm2d(64),
+            nn.ReLU(inplace=True),
+
+            nn.Conv2d(64, 64, 3, padding=1),
+            nn.BatchNorm2d(64),
+            nn.ReLU(inplace=True),
+
+            nn.MaxPool2d(2),
+
+            # Block 3: 12x12 -> 6x6
             nn.Conv2d(64, 128, 3, padding=1),
             nn.BatchNorm2d(128),
             nn.ReLU(inplace=True),
@@ -73,26 +84,15 @@ class EmotionCNN(nn.Module):
             nn.ReLU(inplace=True),
 
             nn.MaxPool2d(2),
-
-            # Block 3: 12x12 -> 6x6
-            nn.Conv2d(128, 256, 3, padding=1),
-            nn.BatchNorm2d(256),
-            nn.ReLU(inplace=True),
-
-            nn.Conv2d(256, 256, 3, padding=1),
-            nn.BatchNorm2d(256),
-            nn.ReLU(inplace=True),
-
-            nn.MaxPool2d(2),
         )
         self.classifier = nn.Sequential(
             nn.AdaptiveAvgPool2d((1, 1)),
             nn.Flatten(),
             nn.Dropout(dropout),
-            nn.Linear(256, 128),
+            nn.Linear(128, 64),
             nn.ReLU(inplace=True),
             nn.Dropout(dropout),
-            nn.Linear(128, 7),
+            nn.Linear(64, 7),
         )
 
     def forward(self, x):
@@ -138,16 +138,29 @@ def train():
         transforms.Normalize((0.5,), (0.5,))
     ])
 
-    val_transform = transforms.Compose([
+    test_transform = transforms.Compose([
         transforms.Grayscale(),
         transforms.Resize((48, 48)),
         transforms.ToTensor(),
         transforms.Normalize((0.5,), (0.5,))
     ])
 
+    sampler = WeightedRandomSampler(weights=sample_weights, num_samples=len(sample_weights), replacement=True)
+
+    # Make deterministic split
+    val_fraction = 0.125
+    n_total = len(train_dataset)
+    n_val = int(round(n_total * val_fraction))
+    n_train = n_total - n_val
+
     train_dataset = datasets.ImageFolder("1/train", transform=transform)
-    val_dataset = datasets.ImageFolder("1/test", transform=val_transform)
-    val_loader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False)
+    train_subset, val_subset = random_split(train_dataset, [n_train, n_val])
+    test_dataset = datasets.ImageFolder("1/test", transform=test_transform)
+
+    train_loader = DataLoader(train_subset, batch_size=batch_size, shuffle=True, sampler=sampler)
+    val_loader   = DataLoader(val_subset,   batch_size=batch_size, shuffle=False)
+    test_loader  = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
+
     targets = [label for _, label in train_dataset.samples]
     class_counts = torch.bincount(torch.tensor(targets))
     class_weights = 1.0 / class_counts.float()
@@ -160,10 +173,6 @@ def train():
     sample_weights = class_weights[torch.tensor(targets)]
     print(sample_weights)
     print(len(sample_weights))
-    
-    sampler = WeightedRandomSampler(weights=sample_weights, num_samples=len(sample_weights), replacement=True)
-
-    train_loader = DataLoader(train_dataset, batch_size=batch_size, sampler=sampler)
 
     images, labels = next(iter(train_loader))
 
