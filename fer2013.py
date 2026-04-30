@@ -145,34 +145,37 @@ def train():
         transforms.Normalize((0.5,), (0.5,))
     ])
 
-    sampler = WeightedRandomSampler(weights=sample_weights, num_samples=len(sample_weights), replacement=True)
-
+    train_dataset = datasets.ImageFolder("1/train", transform=transform)
+    
     # Make deterministic split
     val_fraction = 0.125
     n_total = len(train_dataset)
     n_val = int(round(n_total * val_fraction))
     n_train = n_total - n_val
 
-    train_dataset = datasets.ImageFolder("1/train", transform=transform)
     train_subset, val_subset = random_split(train_dataset, [n_train, n_val])
-    test_dataset = datasets.ImageFolder("1/test", transform=test_transform)
 
-    train_loader = DataLoader(train_subset, batch_size=batch_size, shuffle=True, sampler=sampler)
-    val_loader   = DataLoader(val_subset,   batch_size=batch_size, shuffle=False)
-    test_loader  = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
-
-    targets = [label for _, label in train_dataset.samples]
+    # get labels for the subset by indexing the original dataset with subset.indices
+    train_indices = train_subset.indices
+    targets = [train_dataset.samples[i][1] for i in train_indices]   # or train_dataset.targets[i]
+    # targets = [label for _, label in train_subset.samples]
     class_counts = torch.bincount(torch.tensor(targets))
     class_weights = 1.0 / class_counts.float()
     print(class_counts)
     print(class_weights)
     print(class_weights.sum())
-    # class_weights = class_weights / class_weights.sum() 
     print(class_weights)
 
     sample_weights = class_weights[torch.tensor(targets)]
     print(sample_weights)
     print(len(sample_weights))
+    sampler = WeightedRandomSampler(weights=sample_weights, num_samples=len(sample_weights), replacement=True)
+
+    test_dataset = datasets.ImageFolder("1/test", transform=test_transform)
+
+    train_loader = DataLoader(train_subset, batch_size=batch_size, shuffle=False, sampler=sampler)
+    val_loader   = DataLoader(val_subset,   batch_size=batch_size, shuffle=False)
+    test_loader  = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
 
     images, labels = next(iter(train_loader))
 
