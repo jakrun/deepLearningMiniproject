@@ -183,7 +183,8 @@ def train():
         start_time = time.time()
         runtime_seconds = MAX_RUNTIME * 60
 
-
+    metrics_file = open("metrics.csv", "w")
+    metrics_file.write("epoch,train_loss,val_loss,val_acc\n")
 
     for epoch in range(start_epoch, num_epochs):
         model.train()
@@ -221,9 +222,12 @@ def train():
             torch.save(model.state_dict(), "best.pth")
             marker = "  <- new best, saved best.pth"
         print(f"Epoch [{epoch+1}/{num_epochs}]  train_loss: {epoch_loss:.4f}  val_loss: {val_loss:.4f}  val_acc: {val_acc*100:.2f}%{marker}")
+        metrics_file.write(f"{epoch+1},{epoch_loss:.6f},{val_loss:.6f},{val_acc:.6f}\n")
+        metrics_file.flush()
         if use_checkpointing:
             save_checkpoint(model, optimizer, epoch)
 
+    metrics_file.close()
     print(f"Best val accuracy: {best_val_acc*100:.2f}%")
     # archive the best model (not the last-epoch model)
     if os.path.exists("best.pth"):
